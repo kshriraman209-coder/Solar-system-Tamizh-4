@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Solar System — Orbital Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Tamil:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --void: #03040a;
+    --panel: #0a0d16;
+    --line: #1c2334;
+    --text: #e8edf7;
+    --dim: #6b7690;
+    --amber: #ffaa44;
+    --cyan: #4fc3f7;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    width: 100%; height: 100%;
+    background: var(--void);
+    color: var(--text);
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    overflow: hidden;
+    touch-action: none;
+    position: fixed;
+  }
+  #canvas-wrap { position: absolute; inset: 0; }
+  canvas { display: block; touch-action: none; }
+
+  .hud { position: absolute; z-index: 10; pointer-events: none; }
+  .hud.interactive { pointer-events: auto; }
+
+  #title-block {
+    top: 14px; left: 14px;
+    line-height: 1.5;
+  }
+  #title-block .eyebrow {
+    font-size: 9px; letter-spacing: 0.22em; color: var(--dim); text-transform: uppercase;
+  }
+  #title-block .eyebrow b { color: var(--amber); }
+
+  #loading {
+    position: absolute; inset: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--void);
+    flex-direction: column; gap: 10px;
+    font-size: 11px; letter-spacing: 0.15em; color: var(--dim);
+    transition: opacity 0.5s ease;
+  }
+  #loading .spinner {
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 2px solid var(--line); border-top-color: var(--amber);
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Top-right info panel for selected body */
+  #info-panel {
+    top: 14px; right: 14px;
+    width: 250px;
+    background: rgba(10,13,22,0.88);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px 16px;
+    backdrop-filter: blur(8px);
+    pointer-events: auto;
+    max-height: 70vh;
+    overflow-y: auto;
+    transform: translateX(280px);
+    opacity: 0;
+    transition: transform 0.35s ease, opacity 0.35s ease;
+  }
+  #info-panel.visible { transform: translateX(0); opacity: 1; }
+  #info-panel h2 {
+    margin: 0 0 2px 0; font-size: 16px; color: var(--amber); font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  #info-panel .subtitle { font-size: 9px; color: var(--dim); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 12px; }
+  #info-panel .stat-row {
+    display: flex; justify-content: space-between; gap: 10px;
+    font-size: 11px; padding: 5px 0; border-top: 1px solid var(--line);
+  }
+  #info-panel .stat-row .k { color: var(--dim); }
+  #info-panel .stat-row .v { color: var(--cyan); text-align: right; }
+  #info-panel .close-btn {
+    position: absolute; top: 10px; right: 12px;
+    background: none; border: none; color: var(--dim); font-size: 16px;
+    cursor: pointer; line-height: 1; padding: 4px;
+  }
+  #info-panel .close-btn:hover { color: var(--text); }
+  #info-panel .blurb {
+    font-size: 11px; line-height: 1.5; color: var(--text); margin-top: 10px;
+    border-top: 1px solid var(--line); padding-top: 10px;
+  }
+
+  /* Bottom control deck */
+  #deck {
+    bottom: 14px; left: 14px; right: 14px;
+    display: flex; align-items: center; gap: 12px;
+    pointer-events: none;
+  }
+  .panel {
+    pointer-events: auto;
+    background: rgba(10,13,22,0.88);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    backdrop-filter: blur(8px);
+  }
+  #time-panel {
+    flex: 1;
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px;
+    min-width: 0;
+  }
+  #playPause {
+    width: 30px; height: 30px; min-width: 30px;
+    border-radius: 50%; border: 1px solid var(--line);
+    background: var(--panel); color: var(--amber);
+    cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center;
+  }
+  #playPause:hover { border-color: var(--amber); }
+  #speedSlider { flex: 1; min-width: 60px; }
+  #dateReadout {
+    font-size: 10px; color: var(--cyan); white-space: nowrap; min-width: 92px; text-align: right;
+  }
+  #speedLabel { font-size: 9px; color: var(--dim); white-space: nowrap; min-width: 70px; }
+
+  input[type="range"] {
+    -webkit-appearance: none; height: 3px; background: var(--line); border-radius: 2px; outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%;
+    background: var(--amber); cursor: pointer; box-shadow: 0 0 6px rgba(255,170,68,0.7);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 13px; height: 13px; border-radius: 50%; background: var(--amber); border: none; cursor: pointer;
+  }
+
+  #view-panel {
+    display: flex; gap: 6px; padding: 8px;
+  }
+  .toggle-btn {
+    background: var(--panel); border: 1px solid var(--line); color: var(--dim);
+    font-family: inherit; font-size: 9px; letter-spacing: 0.05em; text-transform: uppercase;
+    padding: 8px 10px; border-radius: 5px; cursor: pointer; white-space: nowrap;
+  }
+  .toggle-btn.active { color: var(--amber); border-color: var(--amber); }
+  .toggle-btn:hover { color: var(--text); }
+
+  /* Language toggle */
+  #lang-panel { display: flex; gap: 6px; padding: 8px; }
+  .lang-btn {
+    background: var(--panel); border: 1px solid var(--line); color: var(--dim);
+    font-family: 'Noto Sans Tamil', 'Latha', sans-serif;
+    font-size: 11px; padding: 8px 12px; border-radius: 5px; cursor: pointer; white-space: nowrap;
+  }
+  .lang-btn.active { color: var(--cyan); border-color: var(--cyan); }
+  .lang-btn:hover { color: var(--text); }
+
+  /* Tamil text rendering: needs a proper Tamil-supporting font stack and
+     noticeably larger size/line-height than Latin to stay comfortably
+     readable, especially on phones. */
+  .ta-text {
+    font-family: 'Noto Sans Tamil', 'Catamaran', 'Latha', 'Tamil Sangam MN', sans-serif;
+  }
+  #info-panel.lang-ta #info-name { font-size: 20px; }
+  #info-panel.lang-ta .subtitle,
+  #info-panel.lang-ta .stat-row,
+  #info-panel.lang-ta .blurb {
+    font-size: 15px;
+    line-height: 1.85;
+  }
+  #info-panel.lang-ta .stat-row .k,
+  #info-panel.lang-ta .stat-row .v {
+    font-size: 14px;
+  }
+
+  /* Planet picker strip */
+  #picker {
+    position: absolute; z-index: 10;
+    top: 14px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 5px;
+    background: rgba(10,13,22,0.88);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 5px;
+    pointer-events: auto;
+    max-width: calc(100vw - 28px);
+    overflow-x: auto;
+  }
+  .planet-chip {
+    width: 30px; height: 30px; border-radius: 50%;
+    border: 1.5px solid transparent;
+    cursor: pointer; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; color: var(--void); font-weight: 700;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+  .planet-chip:hover { transform: scale(1.12); }
+  .planet-chip.active { border-color: var(--text); }
+
+  #help-hint {
+    position: absolute; z-index: 10;
+    bottom: 70px; left: 50%; transform: translateX(-50%);
+    font-size: 9px; color: var(--dim);
+    background: rgba(10,13,22,0.7); border: 1px solid var(--line);
+    padding: 5px 12px; border-radius: 20px;
+    pointer-events: none; transition: opacity 0.8s ease;
+    white-space: nowrap;
+  }
+
+  @media (max-width: 640px) {
+    #info-panel { width: 200px; right: 8px; top: 60px; max-height: 50vh; }
+    #title-block { display: none; }
+    #picker { top: 8px; }
+    #deck { left: 8px; right: 8px; bottom: 8px; flex-wrap: wrap; }
+    #time-panel { width: 100%; }
+    #view-panel { width: 100%; justify-content: center; }
+    #lang-panel { width: 100%; justify-content: center; }
+    #speedLabel { display: none; }
+    #help-hint { display: none; }
+
+    /* On phones, Tamil needs to be even larger relative to the small
+       screen real-estate to stay comfortable to read at arm's length. */
+    #info-panel.lang-ta { width: min(320px, 86vw); right: 7vw; left: 7vw; }
+    #info-panel.lang-ta #info-name { font-size: 22px; }
+    #info-panel.lang-ta .subtitle,
+    #info-panel.lang-ta .stat-row,
+    #info-panel.lang-ta .blurb {
+      font-size: 17px;
+      line-height: 1.95;
+    }
+    #info-panel.lang-ta .stat-row .k,
+    #info-panel.lang-ta .stat-row .v {
+      font-size: 16px;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <div>CALIBRATING ORBITS…</div>
+</div>
+
+<div id="canvas-wrap"></div>
+
+<div id="title-block" class="hud">
+  <div class="eyebrow">ORBITAL SIMULATOR <b>//</b> J2000 epoch elements</div>
+</div>
+
+<div id="picker" class="hud interactive"></div>
+
+<div id="info-panel" class="hud interactive">
+  <button class="close-btn" id="closeInfo">✕</button>
+  <h2 id="info-name">—</h2>
+  <div class="subtitle" id="info-type">—</div>
+  <div id="info-stats"></div>
+  <div class="blurb" id="info-blurb"></div>
+</div>
+
+<div id="help-hint" class="hud">drag to orbit · pinch / scroll to zoom · tap a planet</div>
+
+<div id="deck" class="hud">
+  <div class="panel" id="time-panel">
+    <button id="playPause">▶</button>
+    <span id="speedLabel">1 day/sec</span>
+    <input type="range" id="speedSlider" min="0" max="4" step="0.01" value="1.5">
+    <span id="dateReadout">—</span>
+  </div>
+  <div class="panel" id="view-panel">
+    <button class="toggle-btn active" id="scaleToggle">Log scale</button>
+    <button class="toggle-btn" id="orbitToggle">Orbits: on</button>
+    <button class="toggle-btn" id="resetCam">Reset view</button>
+  </div>
+  <div class="panel" id="lang-panel">
+    <button class="lang-btn active" id="langEn">English</button>
+    <button class="lang-btn" id="langTa">தமிழ்</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(() => {
+  "use strict";
+
+  // ---------------------------------------------------------------------
+  // ACCURATE ORBITAL & PHYSICAL DATA
+  // Source: NASA NSSDCA Planetary Fact Sheet (J2000 mean orbital elements)
+  // Distances: semi-major axis in AU. Diameters: km (real ratios preserved).
+  // Periods: Earth days. Eccentricity: dimensionless. Tilt: degrees.
+  // ---------------------------------------------------------------------
+  const AU = 149.6; // 1 AU in render-units-millions-km equivalent (scaled below)
+
+  const PLANETS = [
+    {
+      name: "Mercury", color: 0x9c9088, ring: false,
+      textureUrl: "https://www.solarsystemscope.com/textures/download/2k_mercury.jpg",
+      diameterKm: 4879, semiMajorAxisAU: 0.387, eccentricity: 0.2056,
+      orbitalPeriodDays: 87.969, rotationPeriodHrs: 1407.6, axialTiltDeg: 0.034,
+      type: "Terrestrial planet",
+      blurb: "The smallest and fastest planet, whipping around the Sun in under 88 days. Its surface is heavily cratered, much like our Moon.",
+      stats: { "Distance from Sun": "57.9 million km", "Day length": "1,408 hrs", "Moons": "0" },
+      ta: {
+        name: "புதன்",
+        type: "பாறை கோள்",
+        blurb: "சூரிய குடும்பத்திலேயே மிகச் சிறிய மற்றும் வேகமான கோள் இது. 88 நாட்களுக்கும் குறைவான காலத்திலே சூரியனை ஒரு முறை சுற்றி வருகிறது. இதன் மேற்பரப்பு நமது நிலவைப் போலவே பள்ளங்கள் நிறைந்தது.",
+        stats: { "சூரியனிலிருந்து தொலைவு": "5.79 கோடி கி.மீ", "ஒரு நாளின் நீளம்": "1,408 மணி நேரம்", "துணைக்கோள்கள்": "0" }
+      }
+    },
+    {
+      name: "Venus", color: 0xe8c79a, ring: false,
+      textureUrl: "https://www.solarsystemscope.com/textures/download/2k_venus_surface.jpg",
+      diameterKm: 12104, semiMajorAxisAU: 0.723, eccentricity: 0.0067,
+      orbitalPeriodDays: 224.701, rotationPeriodHrs: -5832.5, axialTiltDeg: 177.4,
+      type: "Terrestrial planet",
+      blurb: "Earth's near-twin in size, but a runaway greenhouse effect makes it the hottest planet. It spins backward, very slowly.",
+      stats: { "Distance from Sun": "108.2 million km", "Day length": "5,832 hrs", "Moons": "0" },
+      ta: {
+        name: "வெள்ளி",
+        type: "பாறை கோள்",
+        blurb: "அளவில் பூமியை ஒத்திருக்கும் கோள் இது, ஆனால் கட்டுப்பாடற்ற பசுமை இல்ல விளைவு காரணமாக சூரிய குடும்பத்திலேயே மிகவும் வெப்பமான கோளாக மாறியுள்ளது. இது மிக மெதுவாக, எதிர் திசையில் சுழல்கிறது.",
+        stats: { "சூரியனிலிருந்து தொலைவு": "10.82 கோடி கி.மீ", "ஒரு நாளின் நீளம்": "5,832 மணி நேரம்", "துணைக்கோள்கள்": "0" }
+      }
+    },
+    {
+      name: "Earth", color: 0x4f86c6, ring: false,
+      textureUrl: "https://www.solarsystemscope.com/textures/download/2k_earth_daymap.jpg",
+      diameterKm: 12756, semiMajorAxisAU: 1.0, eccentricity: 0.0167,
+      orbitalPeriodDays: 365.256, rotationPeriodHrs: 23.9345, axialTiltDeg: 23.44,
+      type: "Terrestrial planet",
+      blurb: "Our home — the only known world with liquid water oceans and life, kept temperate by its axial tilt and atmosphere.",
+      stats: { "Distance from Sun": "149.6 million km", "Day length": "23.9 hrs", "Moons": "1" },
+      ta: {
+        name: "பூமி",
+        type: "பாறை கோள்",
+        blurb: "நமது வீடு — திரவ நீர் கடல்களும், உயிரினங்களும் கொண்ட ஒரே அறியப்பட்ட உலகம் இது. பூமியின் சாய்வும், வளிமண்டலமும் இதை வாழ்தகுந்த வெப்பநிலையில் வைத்திருக்கின்றன.",
+        stats: { "சூரியனிலிருந்து தொலைவு": "14.96 கோடி கி.மீ", "ஒரு நாளின் நீளம்": "23.9 மணி நேரம்", "துணைக்கோள்கள்": "1" }
+      }
+    },
+    {
+      name: "Mars", color: 0xc1542c, ring: false,
+      textureUrl: "https://www.solarsystemscope.com/textures/download/2k_mars.jpg",
+      diameterKm: 6792, semiMajorAxisAU: 1.524, eccentricity: 0.0935,
+      orbitalPeriodDays: 686.98, rotationPeriodHrs: 24.6229, axialTiltDeg: 25.19,
+      type: "Terrestrial planet",
+      blurb: "The Red Planet, colored by iron oxide dust. Home to the solar system's tallest volcano and a day nearly identical to Earth's.",
+      stats: { "Distance from Sun": "227.9 million km", "Day length": "24.6 hrs", "Moons": "2" },
+      ta: {
+        name: "செவ்வாய்",
+        type: "பாறை கோள்",
+        blurb: "இரும்பு ஆக்சைடு தூசியால் சிவப்பு நிறம் பெற்றுள்ள கோள் இது. சூரிய குடும்பத்திலேயே மிக உயரமான எரிமலையும், பூமியின் நாளுக்கு மிக நெருக்கமான நாள் நீளமும் இங்கு உள்ளன.",
+        stats: { "சூரியனிலிருந்து தொலைவு": "22.79 கோடி கி.மீ", "ஒரு நாளின் நீளம்": "24.6 மணி நேரம்", "துணைக்கோள்கள்": "2" }
+      }
+    },
+    {
+      name: "Jupiter", color: 0xd8b384, ring: false,
+      textureUrl: "https://www.solarsystemscope.com/textures/download/2k_jupiter.jpg",
+      diameterKm: 142984, semiMajorAxisAU: 5.204, eccentricity: 0.0489,
+      orbitalPeriodDays: 4332.59, rotationPeriodHrs: 9.925, axialTiltDeg: 3.13,
+      type: "Gas giant",
+      blurb: "The largest planet by far — a churning ball of hydrogen and helium with a storm, the Great Red Spot, bigger than Earth.",
+      stats: { "Distance from Sun": "778.5 million km", "Day length": "9.9 hrs", "Moons": "95+" },
+      ta: {
+        name: "வியாழன்",
+        type: "வாயு பெரு கோள்",
+        blurb: "சூரிய குடும்பத்திலேயே மிகப் பெரிய கோள் இது — ஹைட்ரஜன் மற்றும் ஹீலியம் வாயுக்களால் ஆன பெரும் கோளம். இங்குள்ள 'பெரும் சிவப்புப் புள்ளி' எனும் புயல், பூமியை விடப் பெரியது.",
+        stats: { "சூரியனிலிருந்து தொலைவு": "77.85 கோடி கி.மீ", "ஒரு நாளின் நீளம்": "9.9 மணி நேரம்", "துணைக்கோள்கள்": "95+" }
+      }
+    },
+    {
+      name: "Saturn", color: 0xe3cf9e, ring: true,
+      textureUrl: "https://www.solarsystemscope.com/textures/download/2k_saturn.jpg",
+      ringTextureUrl: "https://www.solarsystemscope.com/textures/download/2k_saturn_ring_alpha.png",
+      diameterKm: 120536, semiMajorAxisAU: 9.537, eccentricity: 0.0565,
+      orbitalPeriodDays: 10759.22, rotationPeriodHrs: 10.656, axialTiltDeg: 26.73,
+      type: "Gas giant",
+      blurb: "Famous for its dazzling ring system made of countless icy particles. It's the least dense planet — it would float in water.",
+      stats: { "Distance from Sun": "1,434 million km", "Day length": "10.7 hrs", "Moons": "146+" },
+      ta: {
+        name: "சனி",
+        type: "வாயு பெரு கோள்",
+        blurb: "எண்ணற்ற பனிக்கட்டித் துணிக்கைகளால் ஆன அழகிய வளையங்களுக்காக புகழ்பெற்ற கோள் இது. அடர்த்தி மிகக் குறைவான கோளாக இருப்பதால், இது தண்ணீரில் மிதக்கும்.",
+        stats: { "சூரியனிலிருந்து தொலைவு": "143.4 கோடி கி.மீ", "ஒரு நாளின் நீளம்": "10.7 மணி நேரம்", "துணைக்கோள்கள்": "146+" }
+      }
+    },
+    {
+      name: "Uranus", color: 0x9fd9e5, ring: true,
+      textureUrl: "https://www.solarsystemscope.com/textures/download/2k_uranus.jpg",
+      diameterKm: 51118, semiMajorAxisAU: 19.191, eccentricity: 0.0457,
+      orbitalPeriodDays: 30688.5, rotationPeriodHrs: -17.24, axialTiltDeg: 97.77,
+      type: "Ice giant",
+      blurb: "Tipped almost completely on its side, Uranus rolls around the Sun like a ball rather than spinning upright like the others.",
+      stats: { "Distance from Sun": "2,871 million km", "Day length": "17.2 hrs", "Moons": "28" },
+      ta: {
+        name: "யுரேனஸ்",
+        type: "பனி பெரு கோள்",
+        blurb: "தனது அச்சில் கிட்டத்தட்ட முற்றிலும் சாய்ந்திருக்கும் இந்தக் கோள், மற்ற கோள்களைப் போல நிமிர்ந்து சுழலாமல், ஒரு பந்தைப் போல சூரியனைச் சுற்றி உருண்டு செல்கிறது.",
+        stats: { "சூரியனிலிருந்து தொலைவு": "287.1 கோடி கி.மீ", "ஒரு நாளின் நீளம்": "17.2 மணி நேரம்", "துணைக்கோள்கள்": "28" }
+      }
+    },
+    {
+      name: "Neptune", color: 0x3f6fd1, ring: true,
+      textureUrl: "https://www.solarsystemscope.com/textures/download/2k_neptune.jpg",
+      diameterKm: 49528, semiMajorAxisAU: 30.07, eccentricity: 0.0113,
+      orbitalPeriodDays: 60195, rotationPeriodHrs: 16.11, axialTiltDeg: 28.32,
+      type: "Ice giant",
+      blurb: "The windiest planet, with supersonic storms, and the most distant — a single orbit takes about 165 Earth years.",
+      stats: { "Distance from Sun": "4,495 million km", "Day length": "16.1 hrs", "Moons": "16" },
+      ta: {
+        name: "நெப்டியூன்",
+        type: "பனி பெரு கோள்",
+        blurb: "ஒலியின் வேகத்தைத் தாண்டிய புயல்களைக் கொண்ட, காற்று அதிகம் வீசும் கோள் இது. சூரியனிலிருந்து மிகத் தொலைவில் இருப்பதால், ஒரு சுற்றுக்கு சுமார் 165 பூமி ஆண்டுகள் ஆகின்றன.",
+        stats: { "சூரியனிலிருந்து தொலைவு": "449.5 கோடி கி.மீ", "ஒரு நாளின் நீளம்": "16.1 மணி நேரம்", "துணைக்கோள்கள்": "16" }
+      }
+    }
+  ];
+
+  const SUN = { diameterKm: 1392700, color: 0xffd27a, textureUrl: "https://www.solarsystemscope.com/textures/download/2k_sun.jpg" };
+
+  // ---------------------------------------------------------------------
+  // SCALE STRATEGY
+  // True linear scale makes inner planets invisible next to Neptune's orbit
+  // (30 AU vs 0.39 AU) and makes planets invisible specks next to distances.
+  // We render TWO selectable distance modes (true linear vs compressed log)
+  // while always using physically-correct ECCENTRICITY for orbit shape and
+  // correct RELATIVE planet-size ratios (with one shared up-scale factor
+  // so planets are visible) and correct RELATIVE period ratios for motion.
+  // ---------------------------------------------------------------------
+
+  const SCENE_AU_UNIT = 14; // 1 AU = 14 scene units in linear mode (tuned for camera range)
+  function distLinear(au) { return au * SCENE_AU_UNIT; }
+  function distLog(au) {
+    // log-compressed but monotonic & order-preserving, anchored so Earth stays at a friendly radius
+    return 9 + Math.log(1 + au) * 13.5;
+  }
+
+  // Planet visual radius: real diameter ratios, but with an exaggeration
+  // curve so Mercury isn't a literal invisible dot next to Jupiter.
+  const SUN_VISUAL_R = 6.2;
+  function planetVisualRadius(diameterKm) {
+    const earthD = 12756;
+    const ratio = diameterKm / earthD;
+    // soft power curve: keeps order & relative feel without vanishing small planets
+    return 0.62 * Math.pow(ratio, 0.42);
+  }
+
+  // ---------------------------------------------------------------------
+  // THREE.JS SETUP
+  // ---------------------------------------------------------------------
+  const wrap = document.getElementById('canvas-wrap');
+  const scene = new THREE.Scene();
+
+  const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 5000);
+  camera.position.set(0, 55, 95);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setClearColor(0x03040a);
+  wrap.appendChild(renderer.domElement);
+
+  // Starfield
+  function makeStarfield() {
+    const starCount = 4000;
+    const positions = new Float32Array(starCount * 3);
+    for (let i = 0; i < starCount; i++) {
+      const r = 800 + Math.random() * 1200;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      positions[i*3]     = r * Math.sin(phi) * Math.cos(theta);
+      positions[i*3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+      positions[i*3 + 2] = r * Math.cos(phi);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.1, sizeAttenuation: false, opacity: 0.85, transparent: true });
+    return new THREE.Points(geo, mat);
+  }
+  scene.add(makeStarfield());
+
+  // ---------------------------------------------------------------------
+  // TEXTURE LOADING
+  // Real NASA-derived imagery (Solar System Scope CC-BY-4.0 pack, built on
+  // NASA Messenger/Viking/Cassini/Hubble data) loaded as actual surface
+  // textures. Loading happens client-side over the network, so each
+  // material starts with its flat fallback color and texture-maps in
+  // progressively as each image arrives — nothing blocks on this.
+  // ---------------------------------------------------------------------
+  const textureLoader = new THREE.TextureLoader();
+  textureLoader.crossOrigin = 'anonymous';
+
+  function loadTextureOnto(material, url, mapKey) {
+    if (!url) return;
+    textureLoader.load(
+      url,
+      (tex) => {
+        if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace;
+        material[mapKey] = tex;
+        if (mapKey === 'map') material.color.set(0xffffff); // let the photo's real colors show, not tinted by the fallback swatch
+        material.needsUpdate = true;
+      },
+      undefined,
+      () => { /* network hiccup or blocked domain: keep the flat fallback color, no crash */ }
+    );
+  }
+
+  // Sun
+  const sunGeo = new THREE.SphereGeometry(SUN_VISUAL_R, 48, 48);
+  const sunMat = new THREE.MeshBasicMaterial({ color: SUN.color });
+  const sunMesh = new THREE.Mesh(sunGeo, sunMat);
+  scene.add(sunMesh);
+  loadTextureOnto(sunMat, SUN.textureUrl, 'map');
+
+  const sunGlow = new THREE.PointLight(0xfff1d6, 2.6, 0, 0);
+  sunMesh.add(sunGlow);
+  scene.add(new THREE.AmbientLight(0x404858, 0.55));
+
+  // Sun corona sprite (soft glow billboard)
+  function makeGlowSprite(sizeScale, color, opacity) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const ctx = c.getContext('2d');
+    const grad = ctx.createRadialGradient(64,64,0,64,64,64);
+    grad.addColorStop(0, `rgba(255,235,190,${opacity})`);
+    grad.addColorStop(1, 'rgba(255,235,190,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0,0,128,128);
+    const tex = new THREE.CanvasTexture(c);
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(sizeScale, sizeScale, 1);
+    return sprite;
+  }
+  sunMesh.add(makeGlowSprite(SUN_VISUAL_R * 6, 0xfff1d6, 0.9));
+
+  // ---------------------------------------------------------------------
+  // Planet construction
+  // ---------------------------------------------------------------------
+  let useLogScale = true;
+  let showOrbits = true;
+
+  const planetGroup = new THREE.Group();
+  scene.add(planetGroup);
+
+  const bodies = []; // { def, mesh, orbitLine, pivot, angle, visualR }
+
+  function buildOrbitEllipseGeometry(aScene, e) {
+    // Ellipse with semi-major axis a, eccentricity e, focus at origin (Sun).
+    // Parametrize by true anomaly to keep the Sun at a focus, not center.
+    const segs = 256;
+    const pts = [];
+    const b = aScene * Math.sqrt(1 - e * e); // semi-minor
+    const c = aScene * e; // focal offset
+    for (let i = 0; i <= segs; i++) {
+      const theta = (i / segs) * Math.PI * 2;
+      const x = aScene * Math.cos(theta) - c; // shift so focus (Sun) is at x=0
+      const z = b * Math.sin(theta);
+      pts.push(new THREE.Vector3(x, 0, z));
+    }
+    return new THREE.BufferGeometry().setFromPoints(pts);
+  }
+
+  function createPlanet(def) {
+    const visualR = planetVisualRadius(def.diameterKm);
+    const geo = new THREE.SphereGeometry(visualR, 48, 48);
+    const mat = new THREE.MeshStandardMaterial({
+      color: def.color, roughness: 0.85, metalness: 0.05, emissive: def.color, emissiveIntensity: 0.06
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.userData.name = def.name;
+    loadTextureOnto(mat, def.textureUrl, 'map');
+    // Once a real photo texture is in, drop the emissive flat-color glow so
+    // the actual surface imagery reads clearly instead of being washed out.
+    if (def.textureUrl) {
+      const checkLoaded = () => {
+        if (mat.map) { mat.emissiveIntensity = 0; }
+        else { requestAnimationFrame(checkLoaded); }
+      };
+      requestAnimationFrame(checkLoaded);
+    }
+
+    const tiltRad = (def.axialTiltDeg % 180) * Math.PI / 180;
+    mesh.rotation.z = tiltRad;
+
+    if (def.ring) {
+      const ringGeo = new THREE.RingGeometry(visualR * 1.5, visualR * 2.4, 64);
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: def.ringTextureUrl ? 0xffffff : def.color,
+        side: THREE.DoubleSide, transparent: true, opacity: def.ringTextureUrl ? 1 : 0.55
+      });
+      if (def.ringTextureUrl) loadTextureOnto(ringMat, def.ringTextureUrl, 'map');
+      const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+      ringMesh.rotation.x = Math.PI / 2;
+      mesh.add(ringMesh);
+    }
+
+    const pivot = new THREE.Group(); // holds the orbit position, Sun is at world origin
+    pivot.add(mesh);
+    planetGroup.add(pivot);
+
+    const orbitLine = new THREE.Line(
+      new THREE.BufferGeometry(),
+      new THREE.LineBasicMaterial({ color: 0x4fc3f7, transparent: true, opacity: 0.32 })
+    );
+    scene.add(orbitLine);
+
+    return {
+      def, mesh, pivot, orbitLine, visualR,
+      angle: Math.random() * Math.PI * 2 // randomized start position for visual interest
+    };
+  }
+
+  PLANETS.forEach(def => bodies.push(createPlanet(def)));
+
+  function recomputeLayout() {
+    bodies.forEach(b => {
+      const aAU = b.def.semiMajorAxisAU;
+      const aScene = useLogScale ? distLog(aAU) : distLinear(aAU);
+      b.aScene = aScene;
+      b.orbitLine.geometry.dispose();
+      b.orbitLine.geometry = buildOrbitEllipseGeometry(aScene, b.def.eccentricity);
+      b.orbitLine.visible = showOrbits;
+    });
+  }
+  recomputeLayout();
+
+  // ---------------------------------------------------------------------
+  // TIME & ANIMATION STATE
+  // ---------------------------------------------------------------------
+  const simState = {
+    playing: true,
+    daysPerSecond: Math.pow(10, 1.5) * 0.3, // mapped from slider; tuned default
+    elapsedDays: 0,
+    epoch: new Date(2000, 0, 1)
+  };
+
+  function updatePositions(dtDays) {
+    simState.elapsedDays += dtDays;
+    bodies.forEach(b => {
+      const periodDays = b.def.orbitalPeriodDays;
+      const meanMotion = (Math.PI * 2) / periodDays; // rad/day — mean anomaly advances at this CONSTANT rate (this part is correct Kepler physics)
+      b.angle += meanMotion * dtDays; // b.angle == mean anomaly M
+      const M = b.angle;
+      const e = b.def.eccentricity;
+
+      // Solve Kepler's equation M = E - e*sin(E) for eccentric anomaly E
+      // via Newton-Raphson. This is what makes the planet speed up near
+      // perihelion and slow down near aphelion, instead of moving at a
+      // fake constant angular rate (which produces a visibly wrong,
+      // off-looking path on an eccentric ellipse).
+      let E = M; // good initial guess for low-to-moderate eccentricities
+      for (let iter = 0; iter < 6; iter++) {
+        const dE = (E - e * Math.sin(E) - M) / (1 - e * Math.cos(E));
+        E -= dE;
+        if (Math.abs(dE) < 1e-9) break;
+      }
+
+      const a = b.aScene;
+      const bMinor = a * Math.sqrt(1 - e * e);
+      const c = a * e;
+      // Position on the ellipse parametrized by eccentric anomaly E,
+      // with the Sun correctly placed at the focus (shifted by c).
+      const x = a * Math.cos(E) - c;
+      const z = bMinor * Math.sin(E);
+      b.pivot.position.set(x, 0, z);
+
+      // self rotation (visual spin), scaled for visibility regardless of sim speed sign
+      const spinDir = b.def.rotationPeriodHrs < 0 ? -1 : 1;
+      b.mesh.rotation.y += 0.01 * spinDir * Math.sign(dtDays || 1);
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // CAMERA CONTROLS (custom orbit controls — mouse + touch, no extra libs)
+  // ---------------------------------------------------------------------
+  const controls = {
+    target: new THREE.Vector3(0, 0, 0),
+    radius: 110,
+    minRadius: 8,
+    maxRadius: 900,
+    theta: Math.PI * 0.32,  // azimuth
+    phi: Math.PI * 0.36,    // polar
+    minPhi: 0.12,
+    maxPhi: Math.PI - 0.12,
+  };
+
+  function applyCameraFromControls() {
+    const x = controls.target.x + controls.radius * Math.sin(controls.phi) * Math.sin(controls.theta);
+    const y = controls.target.y + controls.radius * Math.cos(controls.phi);
+    const z = controls.target.z + controls.radius * Math.sin(controls.phi) * Math.cos(controls.theta);
+    camera.position.set(x, y, z);
+    camera.lookAt(controls.target);
+  }
+  applyCameraFromControls();
+
+  let pointerState = { dragging: false, lastX: 0, lastY: 0, pinchDist: null, moved: false };
+
+  function onPointerDown(x, y) {
+    pointerState.dragging = true;
+    pointerState.lastX = x;
+    pointerState.lastY = y;
+    pointerState.moved = false;
+  }
+  function onPointerMove(x, y) {
+    if (!pointerState.dragging) return;
+    const dx = x - pointerState.lastX;
+    const dy = y - pointerState.lastY;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) pointerState.moved = true;
+    controls.theta -= dx * 0.0045;
+    controls.phi -= dy * 0.0045;
+    controls.phi = Math.max(controls.minPhi, Math.min(controls.maxPhi, controls.phi));
+    pointerState.lastX = x;
+    pointerState.lastY = y;
+    applyCameraFromControls();
+  }
+  function onPointerUp() { pointerState.dragging = false; }
+  function onZoom(delta) {
+    const factor = Math.pow(1.0015, delta);
+    controls.radius = Math.max(controls.minRadius, Math.min(controls.maxRadius, controls.radius * factor));
+    applyCameraFromControls();
+  }
+
+  const dom = renderer.domElement;
+  dom.addEventListener('mousedown', e => onPointerDown(e.clientX, e.clientY));
+  window.addEventListener('mousemove', e => onPointerMove(e.clientX, e.clientY));
+  window.addEventListener('mouseup', onPointerUp);
+  dom.addEventListener('wheel', e => { e.preventDefault(); onZoom(e.deltaY); }, { passive: false });
+
+  let touchMode = null;
+  dom.addEventListener('touchstart', e => {
+    if (e.touches.length === 1) {
+      touchMode = 'drag';
+      onPointerDown(e.touches[0].clientX, e.touches[0].clientY);
+    } else if (e.touches.length === 2) {
+      touchMode = 'pinch';
+      pointerState.pinchDist = pinchDistance(e.touches);
+    }
+  }, { passive: true });
+  dom.addEventListener('touchmove', e => {
+    e.preventDefault();
+    if (touchMode === 'drag' && e.touches.length === 1) {
+      onPointerMove(e.touches[0].clientX, e.touches[0].clientY);
+    } else if (touchMode === 'pinch' && e.touches.length === 2) {
+      const d = pinchDistance(e.touches);
+      const delta = (pointerState.pinchDist - d) * 2.2;
+      onZoom(delta);
+      pointerState.pinchDist = d;
+    }
+  }, { passive: false });
+  dom.addEventListener('touchend', e => {
+    if (e.touches.length === 0) { touchMode = null; onPointerUp(); }
+  }, { passive: true });
+
+  function pinchDistance(touches) {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx*dx + dy*dy);
+  }
+
+  // Tap-to-select (only if it wasn't a drag)
+  const raycaster = new THREE.Raycaster();
+  const ndc = new THREE.Vector2();
+
+  function handleTap(clientX, clientY) {
+    const rect = dom.getBoundingClientRect();
+    ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(ndc, camera);
+    const meshes = bodies.map(b => b.mesh).concat([sunMesh]);
+    const hits = raycaster.intersectObjects(meshes, false);
+    if (hits.length > 0) {
+      const hit = hits[0].object;
+      if (hit === sunMesh) {
+        selectBody(null, true);
+      } else {
+        const body = bodies.find(b => b.mesh === hit);
+        if (body) selectBody(body.def.name, true);
+      }
+    }
+  }
+  dom.addEventListener('click', e => { if (!pointerState.moved) handleTap(e.clientX, e.clientY); });
+
+  // ---------------------------------------------------------------------
+  // UI: picker chips
+  // ---------------------------------------------------------------------
+  const picker = document.getElementById('picker');
+  function hexColor(c) { return '#' + c.toString(16).padStart(6, '0'); }
+
+  const sunChip = document.createElement('div');
+  sunChip.className = 'planet-chip';
+  sunChip.style.background = hexColor(SUN.color);
+  sunChip.title = 'Sun';
+  sunChip.addEventListener('click', () => selectBody(null, true));
+  picker.appendChild(sunChip);
+
+  const chipMap = {};
+  PLANETS.forEach(def => {
+    const chip = document.createElement('div');
+    chip.className = 'planet-chip';
+    chip.style.background = hexColor(def.color);
+    chip.title = def.name;
+    chip.addEventListener('click', () => selectBody(def.name, true));
+    picker.appendChild(chip);
+    chipMap[def.name] = chip;
+  });
+
+  // ---------------------------------------------------------------------
+  // UI: info panel
+  // ---------------------------------------------------------------------
+  const infoPanel = document.getElementById('info-panel');
+  const infoName = document.getElementById('info-name');
+  const infoType = document.getElementById('info-type');
+  const infoStats = document.getElementById('info-stats');
+  const infoBlurb = document.getElementById('info-blurb');
+  document.getElementById('closeInfo').addEventListener('click', () => selectBody(null, false));
+
+  let selectedName = null;
+  let followSelected = false;
+  let currentLang = 'en'; // 'en' | 'ta'
+
+  const DERIVED_LABELS = {
+    en: { diameter: "Diameter", period: "Orbital period", ecc: "Orbit eccentricity", tilt: "Axial tilt" },
+    ta: { diameter: "விட்டம்", period: "சுற்றுப் பாதை காலம்", ecc: "சுற்றுப்பாதை மையவிலகல்", tilt: "அச்சுச் சாய்வு" }
+  };
+
+  function selectBody(name, focusCamera) {
+    selectedName = name;
+    Object.values(chipMap).forEach(c => c.classList.remove('active'));
+    sunChip.classList.remove('active');
+
+    if (!name) {
+      infoPanel.classList.remove('visible');
+      sunChip.classList.add('active');
+      followSelected = false;
+      if (focusCamera) {
+        controls.target.set(0, 0, 0);
+      }
+      return;
+    }
+
+    const body = bodies.find(b => b.def.name === name);
+    if (!body) return;
+    chipMap[name].classList.add('active');
+
+    const isTa = currentLang === 'ta';
+    const ta = body.def.ta;
+    const labels = DERIVED_LABELS[currentLang];
+
+    infoPanel.classList.toggle('lang-ta', isTa);
+
+    infoName.textContent = isTa && ta ? ta.name : body.def.name;
+    infoType.textContent = isTa && ta ? ta.type : body.def.type;
+    infoStats.innerHTML = '';
+
+    const derived = {
+      [labels.diameter]: body.def.diameterKm.toLocaleString() + (isTa ? " கி.மீ" : " km"),
+      [labels.period]: formatPeriod(body.def.orbitalPeriodDays, currentLang),
+      [labels.ecc]: body.def.eccentricity.toFixed(3),
+      [labels.tilt]: body.def.axialTiltDeg.toFixed(1) + "°"
+    };
+    const namedStats = (isTa && ta) ? ta.stats : body.def.stats;
+    const allStats = Object.assign({}, derived, namedStats);
+
+    Object.entries(allStats).forEach(([k, v]) => {
+      const row = document.createElement('div');
+      row.className = 'stat-row';
+      row.innerHTML = `<span class="k">${k}</span><span class="v">${v}</span>`;
+      infoStats.appendChild(row);
+    });
+    infoBlurb.textContent = isTa && ta ? ta.blurb : body.def.blurb;
+    infoPanel.classList.add('visible');
+
+    followSelected = true;
+    if (focusCamera) {
+      controls.radius = Math.max(body.visualR * 9, 6);
+    }
+  }
+
+  function formatPeriod(days, lang) {
+    if (lang === 'ta') {
+      if (days < 1000) return days.toFixed(1) + ' பூமி நாட்கள்';
+      return (days / 365.25).toFixed(1) + ' பூமி ஆண்டுகள்';
+    }
+    if (days < 1000) return days.toFixed(1) + ' Earth days';
+    return (days / 365.25).toFixed(1) + ' Earth years';
+  }
+
+  // ---------------------------------------------------------------------
+  // UI: language toggle
+  // ---------------------------------------------------------------------
+  const langEnBtn = document.getElementById('langEn');
+  const langTaBtn = document.getElementById('langTa');
+
+  function setLang(lang) {
+    currentLang = lang;
+    langEnBtn.classList.toggle('active', lang === 'en');
+    langTaBtn.classList.toggle('active', lang === 'ta');
+    // Re-render the currently open info panel (if any) in the new language
+    if (selectedName) {
+      selectBody(selectedName, false);
+    }
+  }
+  langEnBtn.addEventListener('click', () => setLang('en'));
+  langTaBtn.addEventListener('click', () => setLang('ta'));
+
+  // ---------------------------------------------------------------------
+  // UI: time deck
+  // ---------------------------------------------------------------------
+  const playPauseBtn = document.getElementById('playPause');
+  const speedSlider = document.getElementById('speedSlider');
+  const speedLabel = document.getElementById('speedLabel');
+  const dateReadout = document.getElementById('dateReadout');
+
+  playPauseBtn.addEventListener('click', () => {
+    simState.playing = !simState.playing;
+    playPauseBtn.textContent = simState.playing ? '▶' : '❚❚';
+    playPauseBtn.textContent = simState.playing ? '❙❙' : '▶';
+  });
+  // init label correctly (playing = true -> show pause icon)
+  playPauseBtn.textContent = '❙❙';
+
+  function updateSpeedFromSlider() {
+    const v = parseFloat(speedSlider.value); // 0..4
+    simState.daysPerSecond = Math.pow(10, v) * 0.08; // exponential mapping
+    let label;
+    if (simState.daysPerSecond < 1.5) label = simState.daysPerSecond.toFixed(2) + ' day/sec';
+    else if (simState.daysPerSecond < 365) label = simState.daysPerSecond.toFixed(0) + ' days/sec';
+    else label = (simState.daysPerSecond / 365.25).toFixed(1) + ' yrs/sec';
+    speedLabel.textContent = label;
+  }
+  speedSlider.addEventListener('input', updateSpeedFromSlider);
+  updateSpeedFromSlider();
+
+  function updateDateReadout() {
+    const d = new Date(simState.epoch.getTime() + simState.elapsedDays * 86400000);
+    dateReadout.textContent = d.toISOString().slice(0, 10);
+  }
+
+  // ---------------------------------------------------------------------
+  // UI: view toggles
+  // ---------------------------------------------------------------------
+  const scaleToggle = document.getElementById('scaleToggle');
+  const orbitToggle = document.getElementById('orbitToggle');
+  const resetCam = document.getElementById('resetCam');
+
+  scaleToggle.addEventListener('click', () => {
+    useLogScale = !useLogScale;
+    scaleToggle.textContent = useLogScale ? 'Log scale' : 'True scale';
+    scaleToggle.classList.toggle('active', useLogScale);
+    recomputeLayout();
+  });
+
+  orbitToggle.addEventListener('click', () => {
+    showOrbits = !showOrbits;
+    orbitToggle.textContent = 'Orbits: ' + (showOrbits ? 'on' : 'off');
+    orbitToggle.classList.toggle('active', showOrbits);
+    bodies.forEach(b => b.orbitLine.visible = showOrbits);
+  });
+
+  resetCam.addEventListener('click', () => {
+    selectBody(null, false);
+    controls.target.set(0, 0, 0);
+    controls.radius = 110;
+    controls.theta = Math.PI * 0.32;
+    controls.phi = Math.PI * 0.36;
+    applyCameraFromControls();
+  });
+
+  // ---------------------------------------------------------------------
+  // RESIZE
+  // ---------------------------------------------------------------------
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  // ---------------------------------------------------------------------
+  // MAIN LOOP
+  // ---------------------------------------------------------------------
+  let lastTime = performance.now();
+  function animate() {
+    requestAnimationFrame(animate);
+    const now = performance.now();
+    const dtSeconds = Math.min((now - lastTime) / 1000, 0.1);
+    lastTime = now;
+
+    if (simState.playing) {
+      updatePositions(simState.daysPerSecond * dtSeconds);
+      updateDateReadout();
+    }
+
+    if (followSelected && selectedName) {
+      const body = bodies.find(b => b.def.name === selectedName);
+      if (body) {
+        controls.target.lerp(body.pivot.position, 0.12);
+        applyCameraFromControls();
+      }
+    }
+
+    sunMesh.rotation.y += 0.0009;
+    renderer.render(scene, camera);
+  }
+
+  // Fade out loading screen once first frame is ready
+  requestAnimationFrame(() => {
+    updateDateReadout();
+    const loading = document.getElementById('loading');
+    loading.style.opacity = '0';
+    setTimeout(() => loading.style.display = 'none', 500);
+  });
+
+  // Fade help hint after a while
+  setTimeout(() => {
+    const h = document.getElementById('help-hint');
+    if (h) h.style.opacity = '0';
+  }, 6000);
+
+  animate();
+})();
+</script>
+</body>
+</html>
